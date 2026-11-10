@@ -77,9 +77,11 @@ body.face .msg.A{transform:rotate(180deg);align-self:flex-end}body.face #micB{tr
     <div class="row" style="margin-top:8px"><select id="engine">
       <option value="mm">線上：MyMemory（免金鑰）</option>
       <option value="lt">線上：LibreTranslate（自填網址）</option>
-      <option value="local">離線：Transformers.js（NLLB-200）</option></select></div>
+      <option value="light">離線（輕量）：Opus-MT，低記憶體（建議）</option>
+      <option value="local">離線（完整）：NLLB-200，需 1–2 GB 記憶體</option></select></div>
     <div class="row" id="ltBox" hidden style="margin-top:8px"><input id="ltUrl" placeholder="https://你的-libretranslate" style="flex:2;min-width:170px"><input id="ltKey" placeholder="API Key（選填）" style="flex:1;min-width:110px"></div>
-    <div class="row" style="margin-top:8px"><button id="loadModel">⬇ 下載/載入離線模型</button><span class="st" id="mst">未載入</span></div>
+    <div class="row" style="margin-top:8px"><button id="loadLight">⬇ 預載輕量模型</button><button id="loadModel">⬇ 載入完整模型</button><button id="freeModel">釋放記憶體</button><span class="st" id="mst">未載入</span></div>
+    <div class="row" style="margin-top:6px"><label>閒置自動釋放 <select id="idleMin" style="flex:none;min-width:0"><option value="1">1 分</option><option value="3" selected>3 分</option><option value="10">10 分</option><option value="0">不釋放</option></select></label></div>
     <progress id="prog" value="0" max="100" hidden></progress>
     <p class="st">離線模型首次需下載約數百 MB，之後由瀏覽器快取，可斷網翻譯。線上引擎失敗或斷網時，若已下載模型會自動改用離線翻譯。</p>
     <div class="row"><label><input type="checkbox" id="autoSpeak" checked> 自動朗讀</label><label>語速 <input type="range" id="rate" min="0.6" max="1.4" step="0.1" value="1"></label></div>
@@ -113,7 +115,7 @@ const L=[
  ['Русский','ru-RU','ru','ru','rus_Cyrl'],['Tiếng Việt','vi-VN','vi','vi','vie_Latn'],
  ['ภาษาไทย','th-TH','th','th','tha_Thai'],['Bahasa Indonesia','id-ID','id','id','ind_Latn'],
  ['Português','pt-BR','pt','pt','por_Latn']
-].map(a=>({n:a[0],sr:a[1],mm:a[2],lt:a[3],nl:a[4]}));
+].map(a=>({n:a[0],sr:a[1],mm:a[2],lt:a[3],nl:a[4],mt:a[2].slice(0,2),tw:a[2]==='zh-TW'}));
 const $=i=>document.getElementById(i),esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const S={get(k,d){try{return localStorage.getItem(k)??d}catch{return d}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
 let entries=[],t0=null,timer=null,rec=null,active=null,want=false;
@@ -131,7 +133,12 @@ $('ltUrl').onchange=()=>S.set('ltu',$('ltUrl').value);$('ltKey').onchange=()=>S.
 $('theme').onclick=()=>{const r=document.documentElement;const d=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;r.dataset.theme=d?'light':'dark'};
 
 /* ---------- Offline translation (Transformers.js in worker) ---------- */
-let wk=null,nid=0,pend={},files={};
+let wk=null,nid=0,pend={},files={},idleT=null,ready=false,blocked=false;
+function killWk(msg){clearTimeout(idleT);if(wk){try{wk.terminate()}catch{}wk=null}files={};ready=false;S.set('mloading','0');
+  for(const k in pend){const p=pend[k];delete pend[k];p.rej(new Error(msg||'離線模型已釋放'))}
+  $('prog').hidden=true;$('mst').textContent=(S.get('ml')==='1'||S.get('ml2')==='1')?'已釋放（使用時自動重新載入）':'未載入'}
+function arm(){clearTimeout(idleT);const m=+$('idleMin').value;
+  if(m>0)idleT=setTimeout(()=>{if(wk&&!Object.keys(pend).length){killWk();toast('離線模型閒置已釋放記憶體')}},m*60000)}
 function worker(){
   if(!wk){wk=new Worker('translator.worker.js',{type:'module'});
     wk.onmessage=({data:m})=>{
@@ -139,13 +146,26 @@ function worker(){
         let l=0,t=0;for(const f in files){l+=files[f][0];t+=files[f][1]}
         $('prog').hidden=false;$('prog').value=t?l/t*100:0;$('mst').textContent='下載中 '+(l/1048576).toFixed(0)+'/'+(t/1048576).toFixed(0)+' MB'}return}
       const p=pend[m.id];if(!p)return;delete pend[m.id];m.type==='error'?p.rej(new Error(m.error)):p.res(m)};
-    wk.onerror=e=>{$('mst').textContent='Worker 失敗（需經 https/localhost 開啟）'}}
+    wk.onerror=e=>{const m='離線模型 Worker 中斷（疑似記憶體不足，或未經 https/localhost 開啟）';killWk(m);blocked=true;$('mst').textContent='⚠ '+m+'。可按「下載/載入離線模型」重試'}}
   return wk}
-const callWk=(type,x)=>new Promise((res,rej)=>{const id=++nid;pend[id]={res,rej};try{worker().postMessage({id,type,...x})}catch(e){rej(e)}});
-$('loadModel').onclick=async()=>{$('mst').textContent='載入中…';
+const callWk=(type,x)=>new Promise((res,rej)=>{clearTimeout(idleT);if(!ready)S.set('mloading','1');const id=++nid;
+  pend[id]={res:v=>{if(type==='tr'||type==='tr2'){ready=true;S.set('mloading','0')}arm();res(v)},rej:e=>{S.set('mloading','0');arm();rej(e)}};
+  try{worker().postMessage({id,type,...x})}catch(e){delete pend[id];S.set('mloading','0');rej(e)}});
+$('loadModel').onclick=async()=>{
+  const dm=navigator.deviceMemory;
+  if(((dm&&dm<8)||/Android|iPhone|iPad/i.test(navigator.userAgent))&&!confirm('離線模型載入後預估需要 1–2 GB 記憶體，手機或 4GB 以下裝置可能當機。仍要繼續嗎？'))return;
+  blocked=false;$('mst').textContent='載入中…';
   try{await callWk('load');$('prog').hidden=true;$('mst').textContent='✅ 離線模型就緒';S.set('ml','1');stor(true)}
   catch(e){$('mst').textContent='⚠ '+e.message}};
-if(S.get('ml')==='1')$('mst').textContent='已下載過（使用時自動載入）';
+$('loadLight').onclick=async()=>{const a=L[$('langA').value],b=L[$('langB').value];
+  if(!lightOk.has(a.mt)||!lightOk.has(b.mt)){$('mst').textContent='⚠ 目前語言組合輕量模式不支援（支援：中/英/日/韓/德/西/法/俄）';return}
+  $('mst').textContent='下載輕量模型中…';
+  try{await callWk('prep',{jobs:[{src:a.mt,tgt:b.mt},{src:b.mt,tgt:a.mt}]});$('prog').hidden=true;$('mst').textContent='✅ 輕量離線模型就緒';S.set('ml2','1');stor(true)}
+  catch(e){$('mst').textContent='⚠ '+e.message}};
+$('freeModel').onclick=()=>{killWk();toast('已釋放離線模型記憶體')};
+addEventListener('pagehide',()=>{if(!Object.keys(pend).length)S.set('mloading','0')});
+if(S.get('mloading')==='1'){S.set('mloading','0');blocked=true;$('mst').textContent='⚠ 上次載入離線模型時頁面中斷（疑似記憶體不足），已停用自動離線；可按「下載/載入離線模型」手動重試'}
+else if(S.get('ml')==='1')$('mst').textContent='已下載過（使用時自動載入）';
 
 /* ---------- Translate ---------- */
 async function online(text,f,t){
@@ -159,10 +179,20 @@ async function online(text,f,t){
 const local=async(text,f,t)=>(await callWk('tr',{text,src:f.nl,tgt:t.nl})).text;
 const _tc={};
 async function translate(text,f,t){const k=f.nl+'|'+t.nl+'|'+text;return _tc[k]||(_tc[k]=await tr0(text,f,t))}
+const lightOk=new Set(['zh','en','ja','ko','de','es','fr','ru']);
+async function light(text,f,t){
+  if(!lightOk.has(f.mt)||!lightOk.has(t.mt))throw new Error('輕量離線模式支援 中/英/日/韓/德/西/法/俄；越、泰、印尼、葡請改用線上或完整離線模型');
+  const r=await callWk('tr2',{text,src:f.mt,tgt:t.mt,srcTw:f.tw,tgtTw:t.tw});S.set('ml2','1');return r.text}
 async function tr0(text,f,t){
-  const e=$('engine').value,canLocal=S.get('ml')==='1'||e==='local';
-  if(e==='local'||(!navigator.onLine&&canLocal))return local(text,f,t);
-  try{return await online(text,f,t)}catch(err){if(canLocal){status('線上翻譯失敗，改用離線模型…');return local(text,f,t)}throw err}}
+  const e=$('engine').value,hasL=S.get('ml2')==='1',hasN=S.get('ml')==='1'&&!blocked;
+  if(e==='light')return light(text,f,t);
+  if(e==='local'){if(blocked)throw new Error('上次載入完整離線模型時中斷，請先按「載入完整模型」手動重試，或改用輕量/線上引擎');return local(text,f,t)}
+  if(!navigator.onLine){if(hasL)return light(text,f,t);if(hasN)return local(text,f,t)}
+  try{return await online(text,f,t)}
+  catch(err){
+    if(hasL){status('線上翻譯失敗，改用輕量離線…');try{return await light(text,f,t)}catch{}}
+    if(hasN){status('線上翻譯失敗，改用完整離線模型…');return local(text,f,t)}
+    throw err}}
 
 /* ---------- Speech ---------- */
 function speak(text,l){
@@ -255,7 +285,7 @@ function toast(msg,fn,label){const t=$('toast');t.hidden=false;t.innerHTML=`<spa
   if(fn)t.querySelector('button').onclick=()=>{t.hidden=true;fn()};clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,fn?10000:2500)}
 const net=()=>{$('banner').hidden=navigator.onLine};addEventListener('online',net);addEventListener('offline',net);net();
 const applyFs=()=>document.documentElement.style.setProperty('--fs',$('fs').value+'px');
-[['autoSpeak','checked'],['rate','value'],['fs','value'],['keepOn','checked']].forEach(([i,p])=>{
+[['autoSpeak','checked'],['rate','value'],['fs','value'],['keepOn','checked'],['idleMin','value']].forEach(([i,p])=>{
   const v=S.get('c_'+i);if(v!=null)$(i)[p]=p==='checked'?v==='1':v;
   $(i).onchange=$(i).oninput=()=>{S.set('c_'+i,p==='checked'?($(i)[p]?'1':'0'):$(i)[p]);applyFs()}});applyFs();
 const setFace=on=>{document.body.classList.toggle('face',on);S.set('face',on?'1':'0')};
@@ -280,8 +310,8 @@ $('sessList').onclick=e=>{const b=e.target.closest('button');if(!b)return;const 
 $('saveSess').onclick=need(()=>{const a=sess();a.unshift({title:new Date().toLocaleString()+' · '+entries[0].src.slice(0,14),n:entries.length,entries});S.set('sess',JSON.stringify(a.slice(0,30)));entries=[];render();renderSess();toast('已儲存，並開始新會議')});
 renderSess();
 async function stor(persist){try{if(persist&&navigator.storage.persist)await navigator.storage.persist();const e=await navigator.storage.estimate(),p=navigator.storage.persisted?await navigator.storage.persisted():false;
-  $('stor').textContent=`儲存 ${(e.usage/1048576).toFixed(0)}/${(e.quota/1048576).toFixed(0)} MB${p?' · 已鎖定':''}`}catch{}}
-$('clrModel').onclick=async()=>{if(!confirm('刪除已下載的離線模型？'))return;try{await caches.delete('transformers-cache')}catch{}S.set('ml','0');$('mst').textContent='未載入';stor(false);toast('已清除離線模型')};
+  $('stor').textContent=`儲存 ${(e.usage/1048576).toFixed(0)}/${(e.quota/1048576).toFixed(0)} MB${p?' · 已鎖定':''}${navigator.deviceMemory?' · 瀏覽器回報 RAM 約 '+navigator.deviceMemory+'GB':''}`}catch{}}
+$('clrModel').onclick=async()=>{if(!confirm('刪除已下載的離線模型？'))return;try{await caches.delete('transformers-cache')}catch{}S.set('ml','0');S.set('ml2','0');$('mst').textContent='未載入';stor(false);toast('已清除離線模型')};
 /* ---------- Quick phrases (zh-TW) ---------- */
 const ZH=4,PH={
  '日常':['你好','謝謝','不好意思','沒關係','請稍等一下','我聽不太懂','請再說一次','請說慢一點','可以幫我寫下來嗎？','我的外語不太好'],
