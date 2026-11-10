@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VoiceBridge｜即時 AI 口譯與會議記錄</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#4f46e5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="VoiceBridge">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--tx:#1b1f2a;--mut:#6b7280;--bd:#e3e6ee;--pri:#4f46e5;--pt:#fff;--a:#eef2ff;--b:#ecfdf5;--dg:#dc2626}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1117;--card:#181b24;--tx:#e8eaf0;--mut:#9aa3b2;--bd:#2a2f3c;--pri:#818cf8;--pt:#0f1117;--a:#232748;--b:#13302a}}
+:root[data-theme=dark]{--bg:#0f1117;--card:#181b24;--tx:#e8eaf0;--mut:#9aa3b2;--bd:#2a2f3c;--pri:#818cf8;--pt:#0f1117;--a:#232748;--b:#13302a}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Noto Sans TC","Noto Sans KR",sans-serif;background:var(--bg);color:var(--tx);line-height:1.5;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+header{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--bd);background:var(--card);position:sticky;top:0;z-index:5}
+h1{font-size:18px;margin:0}h1 small{color:var(--mut);display:block;font-weight:400;font-size:12px}
+main{max-width:1120px;margin:0 auto;padding:14px;display:grid;gap:14px}
+@media(min-width:900px){main{grid-template-columns:3fr 2fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;min-width:0}
+h2{font-size:15px;margin:0 0 10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+select,input,button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:8px 10px}
+select{flex:1;min-width:110px}button{cursor:pointer}button:hover{border-color:var(--pri)}
+.pri{background:var(--pri);color:var(--pt);border-color:var(--pri);font-weight:600}
+.mic{flex:1;min-width:130px;padding:14px;font-weight:600}
+.mic.on{background:var(--dg);border-color:var(--dg);color:#fff;animation:p 1.2s infinite}@keyframes p{50%{opacity:.7}}
+#chat{height:44vh;min-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:90%;padding:10px 12px;border-radius:14px;border:1px solid var(--bd)}
+.msg.A{background:var(--a);align-self:flex-start}.msg.B{background:var(--b);align-self:flex-end}
+.src{font-size:calc(var(--fs,16px) - 3px);color:var(--mut)}.dst{font-size:var(--fs,16px);font-weight:600}
+.meta{font-size:11px;color:var(--mut);display:flex;gap:8px;align-items:center;margin-top:3px}.meta button{padding:0 6px;font-size:11px;border-radius:6px}
+#live{min-height:22px;color:var(--mut);font-style:italic;margin:6px 0}
+.st{font-size:12px;color:var(--mut);margin-top:8px}
+details{margin-top:10px}summary{cursor:pointer;font-weight:600;font-size:14px}
+label{font-size:13px;display:flex;gap:6px;align-items:center}
+.stat{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;text-align:center;font-size:12px}
+.stat div{background:var(--bg);border-radius:10px;padding:6px}.stat b{display:block;font-size:19px}
+.kw{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.kw span{background:var(--a);padding:1px 8px;border-radius:99px;font-size:12px}
+#sum{font-size:13px;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:10px;max-height:34vh;overflow:auto}
+#sum h3{font-size:13px;margin:8px 0 2px}#sum h3:first-child{margin-top:0}#sum ul{margin:0;padding-left:18px}
+progress{width:100%;height:10px}
+[hidden]{display:none!important}
+#banner{background:#f59e0b;color:#000;text-align:center;font-size:13px;padding:3px 6px}
+#toast{position:fixed;left:12px;right:12px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:30;background:var(--tx);color:var(--bg);padding:10px 14px;border-radius:12px;display:flex;gap:10px;align-items:center;justify-content:space-between;max-width:520px;margin:auto}
+#toast button{background:transparent;color:inherit;border-color:currentColor}
+.meta button{padding:0 6px}
+body.face .msg.A{transform:rotate(180deg);align-self:flex-end}body.face #micB{transform:rotate(180deg)}body.face .dst{font-size:calc(var(--fs,16px) + 6px)}
+@media(max-width:899px){#microw{position:fixed;left:0;right:0;bottom:0;z-index:10;margin:0!important;padding:8px 12px calc(8px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--bd)}main{padding-bottom:96px}}
+.chip{padding:6px 12px;border-radius:99px;font-size:13px}
+#phBox{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+#print{display:none}
+@media print{body>*:not(#print){display:none!important}body{background:#fff}#print{display:block;color:#000;font:13px/1.6 system-ui,"Noto Sans TC","Noto Sans KR",sans-serif}#print h1{font-size:20px}#print h2{font-size:15px;border-bottom:1px solid #999;margin-top:16px}#print .t{break-inside:avoid;margin:6px 0}}
+</style>
+</head>
+<body>
+<div id="banner" hidden>📴 離線中：可使用離線翻譯與文字輸入</div><div id="toast" hidden></div>
+<header>
+  <h1>🎙 VoiceBridge<small>即時口譯 · 離線翻譯 · 自動摘要</small><small>高嘉和2026以SI編製</small></h1>
+  <div class="row"><button id="install" hidden class="pri">📲 安裝</button><button id="face" title="對坐模式">🔄</button><button id="theme" title="深淺色">🌓</button></div>
+</header>
+<main>
+<section class="card">
+  <h2>即時口譯</h2>
+  <div class="row"><select id="langA"></select><button id="swap">⇄</button><select id="langB"></select></div>
+  <div class="row" id="microw" style="margin-top:10px"><button class="mic" id="micA">🎤 A 說話</button><button class="mic" id="micB">🎤 B 說話</button></div>
+  <div id="live" aria-live="polite"></div>
+  <div id="chat"></div>
+  <div class="row" style="margin-top:10px"><input id="txt" placeholder="輸入文字（Enter 送出，以 A 身分）" style="flex:1;min-width:150px"><button class="pri" id="send">翻譯</button></div>
+  <details open><summary>常用句（繁中）</summary><div class="row" style="margin-top:8px"><select id="phCat"></select><button id="phAdd">＋ 新增</button><button id="phEdit">🗑 管理</button></div><div class="st" id="phHint"></div><div id="phBox"></div></details>
+  <div class="st" id="status"></div>
+  <details open><summary>翻譯引擎與離線模型</summary>
+    <div class="row" style="margin-top:8px"><select id="engine">
+      <option value="mm">線上：MyMemory（免金鑰）</option>
+      <option value="lt">線上：LibreTranslate（自填網址）</option>
+      <option value="local">離線：Transformers.js（NLLB-200）</option></select></div>
+    <div class="row" id="ltBox" hidden style="margin-top:8px"><input id="ltUrl" placeholder="https://你的-libretranslate" style="flex:2;min-width:170px"><input id="ltKey" placeholder="API Key（選填）" style="flex:1;min-width:110px"></div>
+    <div class="row" style="margin-top:8px"><button id="loadModel">⬇ 下載/載入離線模型</button><span class="st" id="mst">未載入</span></div>
+    <progress id="prog" value="0" max="100" hidden></progress>
+    <p class="st">離線模型首次需下載約數百 MB，之後由瀏覽器快取，可斷網翻譯。線上引擎失敗或斷網時，若已下載模型會自動改用離線翻譯。</p>
+    <div class="row"><label><input type="checkbox" id="autoSpeak" checked> 自動朗讀</label><label>語速 <input type="range" id="rate" min="0.6" max="1.4" step="0.1" value="1"></label></div>
+    <div class="row" style="margin-top:6px"><label>字級 <input type="range" id="fs" min="14" max="26" step="1" value="16"></label><label><input type="checkbox" id="keepOn" checked> 聆聽時螢幕常亮</label></div>
+    <div class="row" style="margin-top:6px"><span class="st" id="stor"></span><button id="clrModel">🗑 清除離線模型</button></div>
+  </details>
+  <p class="st">語音辨識使用瀏覽器 Web Speech API，部分瀏覽器需連網；斷網時請用文字輸入。朗讀為系統語音，非個人聲線。</p>
+</section>
+
+<aside class="card">
+  <h2>會議記錄</h2>
+  <div class="stat"><div><b id="sN">0</b>發言</div><div><b id="sW">0</b>字數</div><div><b id="sT">00:00</b>時長</div></div>
+  <div class="kw" id="kw"></div>
+  <div id="sum">尚無內容。</div>
+  <div class="row" style="margin-top:10px">
+    <button id="expPdf">PDF</button><button id="expMd">MD</button><button id="expTxt">TXT</button><button id="expJson">JSON</button>
+    <button id="share">分享</button><button id="copy">複製</button><button id="clear" style="color:var(--dg)">清除</button>
+  </div>
+  <p class="st">PDF 透過系統列印「另存為 PDF」，可完整支援中日韓字型。</p>
+  <details><summary>歷史會議</summary><div class="row" style="margin-top:8px"><button id="saveSess" class="pri">💾 儲存目前並開新會議</button></div><div id="sessList"></div></details>
+</aside>
+</main>
+<div id="print"></div>
+
+<script>
+const L=[
+ ['한국어 Korean','ko-KR','ko','ko','kor_Hang'],['日本語 Japanese','ja-JP','ja','ja','jpn_Jpan'],
+ ['English','en-US','en','en','eng_Latn'],['中文（簡體）','zh-CN','zh-CN','zh','zho_Hans'],
+ ['中文（繁體）','zh-TW','zh-TW','zt','zho_Hant'],['Français','fr-FR','fr','fr','fra_Latn'],
+ ['Español','es-ES','es','es','spa_Latn'],['Deutsch','de-DE','de','de','deu_Latn'],
+ ['Русский','ru-RU','ru','ru','rus_Cyrl'],['Tiếng Việt','vi-VN','vi','vi','vie_Latn'],
+ ['ภาษาไทย','th-TH','th','th','tha_Thai'],['Bahasa Indonesia','id-ID','id','id','ind_Latn'],
+ ['Português','pt-BR','pt','pt','por_Latn']
+].map(a=>({n:a[0],sr:a[1],mm:a[2],lt:a[3],nl:a[4]}));
+const $=i=>document.getElementById(i),esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const S={get(k,d){try{return localStorage.getItem(k)??d}catch{return d}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
+let entries=[],t0=null,timer=null,rec=null,active=null,want=false;
+try{entries=JSON.parse(S.get('ent','[]'))}catch{}
+const status=t=>$('status').textContent=t;
+
+/* ---------- UI init ---------- */
+for(const i of['langA','langB'])L.forEach((l,k)=>$(i).add(new Option(l.n,k)));
+$('langA').value=S.get('la',4);$('langB').value=S.get('lb',2);
+['langA','langB'].forEach(i=>$(i).onchange=()=>{S.set(i==='langA'?'la':'lb',$(i).value);stopRec()});
+$('swap').onclick=()=>{[$('langA').value,$('langB').value]=[$('langB').value,$('langA').value];stopRec()};
+$('engine').value=S.get('eng','mm');$('ltUrl').value=S.get('ltu','');$('ltKey').value=S.get('ltk','');
+const eng=()=>{$('ltBox').hidden=$('engine').value!=='lt';S.set('eng',$('engine').value)};$('engine').onchange=eng;eng();
+$('ltUrl').onchange=()=>S.set('ltu',$('ltUrl').value);$('ltKey').onchange=()=>S.set('ltk',$('ltKey').value);
+$('theme').onclick=()=>{const r=document.documentElement;const d=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;r.dataset.theme=d?'light':'dark'};
+
+/* ---------- Offline translation (Transformers.js in worker) ---------- */
+let wk=null,nid=0,pend={},files={};
+function worker(){
+  if(!wk){wk=new Worker('translator.worker.js',{type:'module'});
+    wk.onmessage=({data:m})=>{
+      if(m.type==='progress'){const p=m.p;if(p.status==='progress'){files[p.file]=[p.loaded,p.total];
+        let l=0,t=0;for(const f in files){l+=files[f][0];t+=files[f][1]}
+        $('prog').hidden=false;$('prog').value=t?l/t*100:0;$('mst').textContent='下載中 '+(l/1048576).toFixed(0)+'/'+(t/1048576).toFixed(0)+' MB'}return}
+      const p=pend[m.id];if(!p)return;delete pend[m.id];m.type==='error'?p.rej(new Error(m.error)):p.res(m)};
+    wk.onerror=e=>{$('mst').textContent='Worker 失敗（需經 https/localhost 開啟）'}}
+  return wk}
+const callWk=(type,x)=>new Promise((res,rej)=>{const id=++nid;pend[id]={res,rej};try{worker().postMessage({id,type,...x})}catch(e){rej(e)}});
+$('loadModel').onclick=async()=>{$('mst').textContent='載入中…';
+  try{await callWk('load');$('prog').hidden=true;$('mst').textContent='✅ 離線模型就緒';S.set('ml','1');stor(true)}
+  catch(e){$('mst').textContent='⚠ '+e.message}};
+if(S.get('ml')==='1')$('mst').textContent='已下載過（使用時自動載入）';
+
+/* ---------- Translate ---------- */
+async function online(text,f,t){
+  if($('engine').value==='lt'){
+    const b=$('ltUrl').value.replace(/\/$/,'');if(!b)throw new Error('請填入 LibreTranslate 網址');
+    const r=await fetch(b+'/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:text,source:f.lt,target:t.lt,format:'text',api_key:$('ltKey').value||undefined})});
+    if(!r.ok)throw new Error('LibreTranslate '+r.status);return(await r.json()).translatedText}
+  const r=await fetch('https://api.mymemory.translated.net/get?q='+encodeURIComponent(text)+'&langpair='+f.mm+'|'+t.mm);
+  if(!r.ok)throw new Error('MyMemory '+r.status);const j=await r.json();
+  if(j.responseStatus&&j.responseStatus!==200)throw new Error(j.responseDetails||'翻譯失敗');return j.responseData.translatedText}
+const local=async(text,f,t)=>(await callWk('tr',{text,src:f.nl,tgt:t.nl})).text;
+const _tc={};
+async function translate(text,f,t){const k=f.nl+'|'+t.nl+'|'+text;return _tc[k]||(_tc[k]=await tr0(text,f,t))}
+async function tr0(text,f,t){
+  const e=$('engine').value,canLocal=S.get('ml')==='1'||e==='local';
+  if(e==='local'||(!navigator.onLine&&canLocal))return local(text,f,t);
+  try{return await online(text,f,t)}catch(err){if(canLocal){status('線上翻譯失敗，改用離線模型…');return local(text,f,t)}throw err}}
+
+/* ---------- Speech ---------- */
+function speak(text,l){
+  if(!$('autoSpeak').checked||!('speechSynthesis'in window))return;
+  const u=new SpeechSynthesisUtterance(text);u.lang=l.sr;u.rate=+$('rate').value;
+  const v=speechSynthesis.getVoices().find(v=>v.lang.replace('_','-').toLowerCase().startsWith(l.sr.slice(0,2).toLowerCase()));
+  if(v)u.voice=v;speechSynthesis.speak(u)}
+async function handle(text,who,ov){
+  text=text.trim();if(!text)return;
+  const f=ov?ov.f:L[$(who==='A'?'langA':'langB').value],t=ov?ov.t:L[$(who==='A'?'langB':'langA').value];
+  const e={who,ts:Date.now(),time:new Date().toLocaleTimeString(),from:f.n,to:t.n,src:text,dst:'…'};
+  entries.push(e);startClock();render();
+  try{e.dst=await translate(text,f,t);speak(e.dst,t);vib(30);status('')}catch(err){e.dst='⚠ '+err.message;status('翻譯錯誤：'+err.message)}
+  render()}
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+function startRec(who){
+  if(!SR){status('此瀏覽器不支援語音辨識，請改用文字輸入或 Chrome/Edge/Safari。');return}
+  stopRec();active=who;want=true;lock();vib(20);rec=new SR();
+  rec.lang=L[$(who==='A'?'langA':'langB').value].sr;rec.continuous=true;rec.interimResults=true;
+  rec.onresult=ev=>{let im='';for(let i=ev.resultIndex;i<ev.results.length;i++){const r=ev.results[i];r.isFinal?handle(r[0].transcript,who):im+=r[0].transcript}$('live').textContent=im};
+  rec.onerror=e=>{if(e.error==='not-allowed'){want=false;status('麥克風權限被拒絕：請在瀏覽器網站設定中允許麥克風')}else if(e.error!=='no-speech')status('辨識錯誤：'+e.error)};
+  rec.onend=()=>{if(want&&active===who){try{rec.start()}catch{}}else mark()};
+  try{rec.start()}catch{}mark();status('聆聽中（'+who+'）…')}
+function stopRec(){want=false;active=null;unlock();if(rec){try{rec.stop()}catch{}rec=null}$('live').textContent='';mark()}
+function mark(){for(const w of'AB'){$('mic'+w).classList.toggle('on',active===w);$('mic'+w).textContent=active===w?'⏹ 停止':'🎤 '+w+' 說話'}}
+$('micA').onclick=()=>active==='A'?(stopRec(),status('')):startRec('A');
+$('micB').onclick=()=>active==='B'?(stopRec(),status('')):startRec('B');
+const send=()=>{const v=$('txt').value;$('txt').value='';handle(v,'A')};$('send').onclick=send;$('txt').onkeydown=e=>e.key==='Enter'&&send();
+
+/* ---------- Summary (offline extractive) ---------- */
+const STOP=new Set('the and for that this with are was were you your have has not but from they will would can could our their there here what when which about into just also 的 了 是 我 你 他 在 和 就 也 都 and'.split(' '));
+const tok=s=>{s=s.toLowerCase();const o=(s.match(/[a-z\u00c0-\u024f\u0400-\u04ff]{3,}/g)||[]).slice();
+  (s.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0e00-\u0e7f]+/g)||[]).forEach(r=>{for(let i=0;i<r.length-1;i++)o.push(r.slice(i,i+2))});
+  return o.filter(w=>!STOP.has(w))};
+const TODO=/(請|需要|必須|應該|記得|待辦|跟進|截止|下週|明天|下周|please|need to|should|must|todo|deadline|follow up|next week|tomorrow|해야|부탁|까지|내일|다음 주|してください|必要|までに|明日|来週|нужно|пожалуйста|necesit|por favor|il faut|bitte|müssen)/i;
+function pick(texts){
+  const ss=texts.flatMap(t=>t.split(/(?<=[.!?。！？])\s*/)).map(s=>s.trim()).filter(s=>s.length>3);
+  if(!ss.length)return{pts:[],todo:[]};
+  const fr={};ss.forEach(s=>tok(s).forEach(w=>fr[w]=(fr[w]||0)+1));
+  const sc=ss.map((s,i)=>{const k=tok(s);return{i,s,v:k.reduce((a,w)=>a+fr[w],0)/Math.sqrt(k.length||1)}});
+  const n=Math.min(5,Math.max(1,Math.round(ss.length/3)));
+  const pts=sc.sort((a,b)=>b.v-a.v).slice(0,n).sort((a,b)=>a.i-b.i).map(x=>x.s);
+  return{pts,todo:ss.filter(s=>TODO.test(s)).slice(0,5)}}
+function summary(){
+  const ok=entries.filter(e=>!e.dst.startsWith('⚠')&&e.dst!=='…');
+  const la=L[$('langA').value].n,lb=L[$('langB').value].n;
+  return{a:{n:la,...pick(ok.map(e=>e.who==='A'?e.src:e.dst))},b:{n:lb,...pick(ok.map(e=>e.who==='B'?e.src:e.dst))}}}
+function sumHtml(s){return[s.a,s.b].map(x=>`<h3>${esc(x.n)} 摘要</h3>`+(x.pts.length?'<ul>'+x.pts.map(p=>`<li>${esc(p)}</li>`).join('')+'</ul>':'—')+
+  (x.todo.length?`<h3>行動項目</h3><ul>`+x.todo.map(p=>`<li>${esc(p)}</li>`).join('')+'</ul>':'')).join('')}
+function sumText(s){return[s.a,s.b].map(x=>`【${x.n} 摘要】\n`+(x.pts.map(p=>'- '+p).join('\n')||'—')+(x.todo.length?`\n【行動項目】\n`+x.todo.map(p=>'- '+p).join('\n'):'')).join('\n\n')}
+
+/* ---------- Render ---------- */
+function render(){
+  const c=$('chat');
+  c.innerHTML=entries.map((e,i)=>`<div class="msg ${e.who}"><div class="src">${esc(e.src)}</div><div class="dst">${esc(e.dst)}</div><div class="meta"><span>${e.who} · ${e.time}</span><button data-a="s" data-i="${i}">🔊</button><button data-a="c" data-i="${i}">📋</button><button data-a="e" data-i="${i}">✏</button><button data-a="d" data-i="${i}">🗑</button></div></div>`).join('');
+  c.scrollTop=c.scrollHeight;
+  $('sN').textContent=entries.length;{const s=entries.length>1?Math.floor((entries[entries.length-1].ts-entries[0].ts)/1000):0;$('sT').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
+  $('sW').textContent=entries.reduce((n,e)=>n+(e.src.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]|[^\s\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]+/g)||[]).length,0);
+  const cnt={};entries.forEach(e=>tok(e.src).forEach(w=>cnt[w]=(cnt[w]||0)+1));
+  $('kw').innerHTML=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([w,n])=>`<span>${esc(w)} ×${n}</span>`).join('');
+  $('sum').innerHTML=entries.length?sumHtml(summary()):'尚無內容。';
+  S.set('ent',JSON.stringify(entries.filter(e=>e.dst!=='…')))}
+function startClock(){}
+
+/* ---------- Export ---------- */
+const head=()=>`會議記錄\n日期：${new Date().toLocaleString()}\n語言：${L[$('langA').value].n} ⇄ ${L[$('langB').value].n}\n發言數：${entries.length}`;
+const toTxt=()=>head()+'\n\n'+sumText(summary())+'\n\n【逐字稿】\n'+entries.map(e=>`[${e.time}] ${e.who}（${e.from}→${e.to}）\n原文：${e.src}\n譯文：${e.dst}\n`).join('\n');
+const toMd=()=>'# '+head().replace(/\n/g,'  \n')+'\n\n## 摘要\n\n'+sumText(summary()).replace(/【(.+?)】/g,'### $1')+'\n\n## 逐字稿\n\n'+entries.map(e=>`**[${e.time}] ${e.who}**（${e.from} → ${e.to}）\n- 原文：${e.src}\n- 譯文：${e.dst}\n`).join('\n');
+function dl(n,c,t){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:t}));a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500)}
+const stamp=()=>new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+const need=f=>()=>entries.length?f():status('沒有可匯出的內容');
+$('expMd').onclick=need(()=>dl(`minutes-${stamp()}.md`,toMd(),'text/markdown'));
+$('expTxt').onclick=need(()=>dl(`minutes-${stamp()}.txt`,toTxt(),'text/plain'));
+$('expJson').onclick=need(()=>dl(`minutes-${stamp()}.json`,JSON.stringify({summary:summary(),entries},null,2),'application/json'));
+$('expPdf').onclick=need(()=>{
+  $('print').innerHTML='<h1>會議記錄</h1><p>'+esc(head().split('\n').slice(1).join('　'))+'</p><h2>摘要</h2>'+sumHtml(summary())+'<h2>逐字稿</h2>'+
+    entries.map(e=>`<div class="t"><b>[${e.time}] ${e.who}</b>（${esc(e.from)}→${esc(e.to)}）<br>${esc(e.src)}<br><b>${esc(e.dst)}</b></div>`).join('');
+  const t=document.title;document.title='minutes-'+stamp();window.print();setTimeout(()=>document.title=t,800)});
+$('copy').onclick=async()=>{try{await navigator.clipboard.writeText(toTxt());status('已複製')}catch{status('複製失敗，請改用匯出')}};
+$('clear').onclick=()=>{if(entries.length&&!confirm('確定清除所有紀錄？'))return;entries=[];clearInterval(timer);timer=null;$('sT').textContent='00:00';render()};
+
+/* ---------- Mobile extras ---------- */
+function vib(p){try{navigator.vibrate&&navigator.vibrate(p)}catch{}}
+let wl=null;
+async function lock(){if(!$('keepOn').checked||!('wakeLock'in navigator))return;try{wl=await navigator.wakeLock.request('screen')}catch{}}
+function unlock(){try{wl&&wl.release()}catch{}wl=null}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&active)lock()});
+let toastT;
+function toast(msg,fn,label){const t=$('toast');t.hidden=false;t.innerHTML=`<span>${esc(msg)}</span>`+(fn?`<button>${esc(label||'確定')}</button>`:'');
+  if(fn)t.querySelector('button').onclick=()=>{t.hidden=true;fn()};clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,fn?10000:2500)}
+const net=()=>{$('banner').hidden=navigator.onLine};addEventListener('online',net);addEventListener('offline',net);net();
+const applyFs=()=>document.documentElement.style.setProperty('--fs',$('fs').value+'px');
+[['autoSpeak','checked'],['rate','value'],['fs','value'],['keepOn','checked']].forEach(([i,p])=>{
+  const v=S.get('c_'+i);if(v!=null)$(i)[p]=p==='checked'?v==='1':v;
+  $(i).onchange=$(i).oninput=()=>{S.set('c_'+i,p==='checked'?($(i)[p]?'1':'0'):$(i)[p]);applyFs()}});applyFs();
+const setFace=on=>{document.body.classList.toggle('face',on);S.set('face',on?'1':'0')};
+$('face').onclick=()=>{const on=!document.body.classList.contains('face');setFace(on);toast(on?'對坐模式：A 說話後，譯文轉向對面閱讀':'已關閉對坐模式')};
+setFace(S.get('face','0')==='1');
+async function retr(e){const f=L.find(x=>x.n===e.from),t=L.find(x=>x.n===e.to);try{e.dst=await translate(e.src,f,t)}catch(err){e.dst='⚠ '+err.message}render()}
+$('chat').onclick=async ev=>{const b=ev.target.closest('button[data-a]');if(!b)return;const i=+b.dataset.i,e=entries[i],a=b.dataset.a;if(!e)return;
+  if(a==='s'){const k=$('autoSpeak').checked;$('autoSpeak').checked=true;speak(e.dst,L.find(x=>x.n===e.to));$('autoSpeak').checked=k}
+  else if(a==='c'){try{await navigator.clipboard.writeText(e.src+'\n'+e.dst);toast('已複製')}catch{}}
+  else if(a==='e'){const v=prompt('修改原文後重新翻譯',e.src);if(v&&v.trim()){e.src=v.trim();e.dst='…';render();retr(e)}}
+  else if(a==='d'&&confirm('刪除這則發言？')){entries.splice(i,1);render()}};
+$('share').onclick=need(async()=>{const tx=toTxt(),f=new File([tx],`minutes-${stamp()}.txt`,{type:'text/plain'});
+  try{if(navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({files:[f],title:'會議記錄'});
+    else if(navigator.share)await navigator.share({title:'會議記錄',text:tx});
+    else{await navigator.clipboard.writeText(tx);toast('此裝置不支援分享，已複製文字')}}
+  catch(e){if(e.name!=='AbortError')toast('分享失敗：'+e.message)}});
+const sess=()=>{try{return JSON.parse(S.get('sess','[]'))}catch{return[]}};
+function renderSess(){const a=sess();$('sessList').innerHTML=a.length?a.map((s,i)=>`<div class="row" style="margin:6px 0"><span style="flex:1;font-size:13px">${esc(s.title)}（${s.n} 則）</span><button data-l="${i}">開啟</button><button data-d="${i}">🗑</button></div>`).join(''):'<div class="st">尚無已存會議</div>'}
+$('sessList').onclick=e=>{const b=e.target.closest('button');if(!b)return;const a=sess();
+  if(b.dataset.l!=null){if(entries.length&&!confirm('目前未儲存的內容將被取代，繼續？'))return;entries=a[+b.dataset.l].entries;render();toast('已開啟會議')}
+  else if(b.dataset.d!=null){a.splice(+b.dataset.d,1);S.set('sess',JSON.stringify(a));renderSess()}};
+$('saveSess').onclick=need(()=>{const a=sess();a.unshift({title:new Date().toLocaleString()+' · '+entries[0].src.slice(0,14),n:entries.length,entries});S.set('sess',JSON.stringify(a.slice(0,30)));entries=[];render();renderSess();toast('已儲存，並開始新會議')});
+renderSess();
+async function stor(persist){try{if(persist&&navigator.storage.persist)await navigator.storage.persist();const e=await navigator.storage.estimate(),p=navigator.storage.persisted?await navigator.storage.persisted():false;
+  $('stor').textContent=`儲存 ${(e.usage/1048576).toFixed(0)}/${(e.quota/1048576).toFixed(0)} MB${p?' · 已鎖定':''}`}catch{}}
+$('clrModel').onclick=async()=>{if(!confirm('刪除已下載的離線模型？'))return;try{await caches.delete('transformers-cache')}catch{}S.set('ml','0');$('mst').textContent='未載入';stor(false);toast('已清除離線模型')};
+/* ---------- Quick phrases (zh-TW) ---------- */
+const ZH=4,PH={
+ '日常':['你好','謝謝','不好意思','沒關係','請稍等一下','我聽不太懂','請再說一次','請說慢一點','可以幫我寫下來嗎？','我的外語不太好'],
+ '會議':['很高興認識您','請問可以開始了嗎？','我想確認一下剛才的內容','可以請您再說明一次嗎？','這部分我們需要內部討論','請問預算大約是多少？','我們下週再跟進','請寄一份會議記錄給我','我同意這個方案','我們需要更多時間考慮'],
+ '旅遊':['請問洗手間在哪裡？','這個多少錢？','可以刷卡嗎？','請給我菜單','我對花生過敏','不要加辣','請幫我叫計程車','請問最近的車站怎麼走？','可以幫我們拍張照嗎？'],
+ '緊急':['請幫幫我！','請叫救護車','我需要看醫生','我的護照不見了','請問警察局在哪裡？','我身體不舒服']};
+let phCat=S.get('phcat','會議'),phEdit=false;
+const custom=()=>{try{return JSON.parse(S.get('phc','[]'))}catch{return[]}};
+const phList=()=>phCat==='自訂'?custom():(PH[phCat]||[]);
+function phTarget(){const a=+$('langA').value,b=+$('langB').value;
+  return{who:(a===ZH||b!==ZH)?'A':'B',to:a===ZH?b:b===ZH?a:b}}
+function renderPh(){
+  $('phCat').innerHTML=[...Object.keys(PH),'自訂'].map(k=>`<option${k===phCat?' selected':''}>${k}</option>`).join('');
+  const a=phList(),tg=phTarget();
+  $('phHint').textContent=tg.to===ZH?'請把其中一個語言改成非繁中，常用句才能翻譯':'以繁中說出，譯為 '+L[tg.to].n;
+  $('phBox').innerHTML=a.map((p,i)=>`<button class="chip" data-i="${i}">${esc(p)}${phEdit&&phCat==='自訂'?' ✕':''}</button>`).join('')||'<span class="st">尚無自訂句，按「＋ 新增」</span>'}
+$('phCat').onchange=()=>{phCat=$('phCat').value;S.set('phcat',phCat);renderPh()};
+$('phAdd').onclick=()=>{const v=prompt('新增常用句（繁體中文）');if(v&&v.trim()){const a=custom();a.push(v.trim());S.set('phc',JSON.stringify(a));phCat='自訂';S.set('phcat',phCat);renderPh()}};
+$('phEdit').onclick=()=>{phEdit=!phEdit;if(phEdit)phCat='自訂';renderPh();toast(phEdit?'點自訂句即可刪除，再按一次「管理」結束':'已結束管理')};
+$('phBox').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;const i=+b.dataset.i;
+  if(phEdit&&phCat==='自訂'){const a=custom();a.splice(i,1);S.set('phc',JSON.stringify(a));renderPh();return}
+  const tg=phTarget();if(tg.to===ZH){toast('請先把其中一個語言改成非繁中');return}
+  vib(15);handle(phList()[i],tg.who,{f:L[ZH],t:L[tg.to]})};
+['langA','langB'].forEach(i=>$(i).addEventListener('change',renderPh));
+renderPh();
+stor(false);
+{const q=new URLSearchParams(location.search),sh=q.get('text')||q.get('title');if(sh){$('txt').value=sh;history.replaceState(null,'',location.pathname)}}
+
+/* ---------- PWA ---------- */
+let dp=null;
+const standalone=matchMedia('(display-mode:standalone)').matches||navigator.standalone;
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();dp=e;$('install').hidden=false});
+addEventListener('appinstalled',()=>{$('install').hidden=true;dp=null});
+if(!standalone&&/iphone|ipad|ipod/i.test(navigator.userAgent)){$('install').hidden=false}
+$('install').onclick=async()=>{
+  if(dp){dp.prompt();await dp.userChoice;dp=null;$('install').hidden=true}
+  else alert('iPhone/iPad：點 Safari 下方「分享」→「加入主畫面」即可安裝。')};
+if('serviceWorker'in navigator&&location.protocol!=='file:'){const had=!!navigator.serviceWorker.controller;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)toast('已有新版本',()=>location.reload(),'重新載入')});navigator.serviceWorker.register('sw.js').catch(e=>status('離線快取啟用失敗：'+e.message))}
+else if(location.protocol==='file:')status('目前以 file:// 開啟：PWA 安裝與離線模型需透過 https 或 localhost 提供。');
+if(entries.length)startClock();
+render();
+</script>
+</body>
+</html>
